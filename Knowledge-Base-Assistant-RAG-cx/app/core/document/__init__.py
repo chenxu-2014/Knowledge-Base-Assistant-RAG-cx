@@ -45,6 +45,8 @@ class DocumentPipeline:
             raise
 
         chunks = self._splitter.split(documents)
+        for i, chunk in enumerate(chunks):
+            chunk.metadata["_chunk_index"] = i
 
         logger.info("文件处理完成: %s → %d 个块", path.name, len(chunks))
         return chunks
