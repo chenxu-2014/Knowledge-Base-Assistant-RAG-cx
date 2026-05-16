@@ -8,7 +8,9 @@
       "Bash(python -c \"from app.core.document import DocumentPipeline; print\\('导入成功'\\); print\\('支持格式:', DocumentPipeline.supported_extensions\\(\\)\\)\")",
       "Bash(python test_document_loader.py)",
       "Bash(python test_embedding.py)",
-      "Bash(python test_vectorstore.py)"
+      "Bash(python test_vectorstore.py)",
+      "Bash(rm -rf test_chroma_db)",
+      "Bash(python test_rag_chain.py)"
     ]
   }
 }
