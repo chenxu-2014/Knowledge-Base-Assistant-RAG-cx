@@ -8,6 +8,8 @@ class ChatRequest(BaseModel):
 
 class SourceDocument(BaseModel):
     content: str
+    source: str = "未知"
+    score: float | None = None
     metadata: dict = Field(default_factory=dict)
 
 

@@ -10,7 +10,14 @@
       "Bash(python test_embedding.py)",
       "Bash(python test_vectorstore.py)",
       "Bash(rm -rf test_chroma_db)",
-      "Bash(python test_rag_chain.py)"
+      "Bash(python test_rag_chain.py)",
+      "Bash(python -c \"from app.main import app; print\\('OK:', app.title\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(uvicorn app.main:app --host 127.0.0.1 --port 8000)",
+      "Bash(curl -s http://127.0.0.1:8000/health)",
+      "Bash(curl -s http://127.0.0.1:8000/)",
+      "Bash(curl -s http://127.0.0.1:8000/api/documents/)",
+      "Bash(kill %1)"
     ]
   }
 }
