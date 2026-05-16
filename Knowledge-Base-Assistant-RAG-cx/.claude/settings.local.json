@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from app.schemas.chat import ChatRequest, ChatResponse, DocumentUploadResponse; print\\('Schemas OK'\\)\")"
+    ]
+  }
+}
