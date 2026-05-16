@@ -3,8 +3,8 @@ from pathlib import Path
 
 from langchain_core.documents import Document
 
-from app.core.document.loader import DocumentLoaderFactory, BaseDocumentLoader
-from app.core.document.splitter import DocumentSplitter
+from app.core.document.loader import DocumentLoaderFactory
+from app.core.document.splitter import DocumentSplitterFactory, BaseDocumentSplitter
 
 logger = logging.getLogger(__name__)
 
@@ -17,26 +17,25 @@ class DocumentPipeline:
 
     def __init__(
         self,
-        chunk_size: int = 512,
-        chunk_overlap: int = 50,
+        chunk_size: int = 500,
+        chunk_overlap: int = 100,
+        splitter_strategy: str = "recursive",
         loader_factory: type[DocumentLoaderFactory] = DocumentLoaderFactory,
     ):
-        self._factory = loader_factory
-        self._splitter = DocumentSplitter(
+        self._loader_factory = loader_factory
+        self._splitter: BaseDocumentSplitter = DocumentSplitterFactory.create(
+            strategy=splitter_strategy,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
         )
 
     def process(self, file_path: str | Path) -> list[Document]:
-        """
-        处理单个文件：加载 → 分块 → 返回可直接入库的 chunks。
-        每个 chunk 的 metadata 中包含 source（原始文件名）。
-        """
+        """处理单个文件：加载 → 分块 → 返回可直接入库的 chunks"""
         path = Path(file_path)
         logger.info("开始处理文件: %s", path.name)
 
         try:
-            loader = self._factory.create(path)
+            loader = self._loader_factory.create(path)
             documents = loader.load(path)
         except (FileNotFoundError, ValueError) as e:
             logger.error("文件加载失败: %s, 错误: %s", path.name, e)
@@ -85,5 +84,8 @@ class DocumentPipeline:
 
     @staticmethod
     def supported_extensions() -> list[str]:
-        """返回支持的文件扩展名列表"""
         return DocumentLoaderFactory.supported_extensions()
+
+    @staticmethod
+    def available_strategies() -> list[str]:
+        return DocumentSplitterFactory.available_strategies()

@@ -221,6 +221,133 @@ def test_batch_process(pipeline, files: dict[str, Path]):
     logger.info("批量处理测试通过: %d 个 chunk，来源文件 %s", len(chunks), sources)
 
 
+def test_splitter_strategies(files: dict[str, Path]):
+    """测试不同分块策略"""
+    from app.core.document import DocumentPipeline
+
+    # 用较长的文本测试，确保能切出多个 chunk
+    long_text_path = TEST_DIR / "long_text.md"
+    long_text_path.write_text(
+        "\n\n".join([f"## 第{i}章\n" + "这是测试内容。" * 50 for i in range(1, 6)]),
+        encoding="utf-8",
+    )
+
+    for strategy in ["fixed", "recursive", "smart"]:
+        logger.info("=" * 50)
+        logger.info("测试分块策略: %s", strategy)
+
+        pipeline = DocumentPipeline(
+            chunk_size=200, chunk_overlap=50, splitter_strategy=strategy
+        )
+        chunks = pipeline.process(long_text_path)
+        assert len(chunks) > 1, f"策略 {strategy} 应产生多个 chunk，实际 {len(chunks)}"
+
+        # 验证 metadata 继承
+        for chunk in chunks:
+            assert chunk.metadata.get("source") == long_text_path.name
+
+        logger.info("策略 %s 测试通过: %d 个 chunk", strategy, len(chunks))
+
+
+def test_splitter_factory():
+    """测试分块器工厂"""
+    from app.core.document.splitter import DocumentSplitterFactory
+
+    logger.info("=" * 50)
+    logger.info("测试分块器工厂")
+
+    available = DocumentSplitterFactory.available_strategies()
+    assert "fixed" in available
+    assert "recursive" in available
+    assert "smart" in available
+    logger.info("可用策略: %s", available)
+
+    # 测试创建各策略
+    for strategy in ["fixed", "recursive", "smart"]:
+        splitter = DocumentSplitterFactory.create(strategy, chunk_size=200, chunk_overlap=50)
+        assert splitter.chunk_size == 200
+        assert splitter.chunk_overlap == 50
+        logger.info("工厂创建 %s 成功", strategy)
+
+    # 测试不支持的策略
+    try:
+        DocumentSplitterFactory.create("nonexistent")
+        assert False, "应该抛出 ValueError"
+    except ValueError as e:
+        logger.info("工厂异常处理正确: %s", e)
+
+
+def test_splitter_invalid_params():
+    """测试分块器参数校验"""
+    from app.core.document.splitter import DocumentSplitterFactory
+
+    logger.info("=" * 50)
+    logger.info("测试分块器参数校验")
+
+    # chunk_size <= 0
+    try:
+        DocumentSplitterFactory.create("fixed", chunk_size=0, chunk_overlap=10)
+        assert False, "应该抛出 ValueError"
+    except ValueError:
+        logger.info("chunk_size=0 校验正确")
+
+    # overlap >= size
+    try:
+        DocumentSplitterFactory.create("recursive", chunk_size=100, chunk_overlap=100)
+        assert False, "应该抛出 ValueError"
+    except ValueError:
+        logger.info("overlap >= size 校验正确")
+
+    # overlap < 0
+    try:
+        DocumentSplitterFactory.create("fixed", chunk_size=100, chunk_overlap=-1)
+        assert False, "应该抛出 ValueError"
+    except ValueError:
+        logger.info("overlap < 0 校验正确")
+
+
+def test_smart_splitter_priority():
+    """测试智能分块器的标题/段落/句子优先级"""
+    from langchain_core.documents import Document
+    from app.core.document.splitter.smart import SmartSplitter
+
+    logger.info("=" * 50)
+    logger.info("测试智能分块器优先级")
+
+    # 构造含标题、段落、句子的长文本
+    text = (
+        "# 第一章 总则\n\n"
+        "第一条 本办法适用于公司全体员工。员工应当遵守公司各项规章制度。\n\n"
+        "第二条 公司实行每周五天工作制，每日工作时间为上午九点至下午六点。\n\n"
+        "## 第二章 考勤管理\n\n"
+        "第三条 员工应当按时上下班，不得迟到早退。迟到超过三十分钟视为旷工半天。\n\n"
+        "第四条 员工请假应当提前申请。病假需提供医院证明，事假需经主管审批。\n\n"
+        "## 第三章 奖惩制度\n\n"
+        "第五条 对工作表现优秀的员工给予表彰和奖励。奖励包括但不限于奖金、晋升和荣誉称号。\n\n"
+        "第六条 对违反公司规定的员工视情节轻重给予处分。处分包括警告、记过和解除劳动合同。"
+    )
+
+    splitter = SmartSplitter(chunk_size=150, chunk_overlap=20)
+    doc = Document(page_content=text, metadata={"source": "test.md"})
+    chunks = splitter.split([doc])
+
+    assert len(chunks) > 1, f"智能分块应产生多个 chunk，实际 {len(chunks)}"
+    for chunk in chunks:
+        assert len(chunk.page_content) <= 150, (
+            f"chunk 超过 chunk_size: {len(chunk.page_content)} > 150"
+        )
+        assert chunk.metadata["source"] == "test.md"
+
+    # 验证按标题切分：章节标题不应被截断
+    heading_chunks = [c for c in chunks if "## 第" in c.page_content or "# 第" in c.page_content]
+    assert len(heading_chunks) > 0, "应存在以标题开头的 chunk"
+
+    logger.info("智能分块测试通过: %d 个 chunk", len(chunks))
+    for i, chunk in enumerate(chunks[:5]):
+        preview = chunk.page_content[:60].replace("\n", " ").strip()
+        logger.info("  chunk[%d](%d字): %s", i, len(chunk.page_content), preview)
+
+
 # ============================================================
 # 3. 工具函数
 # ============================================================
@@ -252,6 +379,7 @@ def main():
     pipeline = DocumentPipeline(chunk_size=200, chunk_overlap=20)
 
     logger.info("支持的文件格式: %s", pipeline.supported_extensions())
+    logger.info("可用分块策略: %s", pipeline.available_strategies())
 
     try:
         # 生成测试文件
@@ -268,6 +396,12 @@ def main():
 
         # 批量测试
         test_batch_process(pipeline, files)
+
+        # 分块策略测试
+        test_splitter_factory()
+        test_splitter_invalid_params()
+        test_splitter_strategies(files)
+        test_smart_splitter_priority()
 
         logger.info("=" * 50)
         logger.info("全部测试通过！")
