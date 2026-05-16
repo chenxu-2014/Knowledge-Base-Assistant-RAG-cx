@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     local_model_path: str = ""
     local_model_name: str = ""
 
+    # Embedding 配置
+    embedding_provider: str = Field(default="deepseek", description="Embedding 供应商: deepseek | xiaomi | local")
+    embedding_deepseek_model: str = "deepseek-embedding"
+    embedding_xiaomi_model: str = "text-embedding-001"
+    embedding_local_model: str = "BAAI/bge-small-zh-v1.5"
+
     # Chroma 配置
     chroma_persist_dir: str = "data/chroma_db"
     chroma_collection_name: str = "knowledge_base"
