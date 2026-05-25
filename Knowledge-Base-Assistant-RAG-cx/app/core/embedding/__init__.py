@@ -43,6 +43,12 @@ class EmbeddingFactory:
                 "local",
                 model_name=settings.embedding_local_model,
             )
+        elif provider == "ollama":
+            return cls.create(
+                "ollama",
+                base_url=settings.ollama_base_url,
+                model=settings.embedding_ollama_model,
+            )
         else:
             raise ValueError(f"未知的 Embedding 供应商: {provider}")
 
@@ -61,6 +67,10 @@ from app.core.embedding.api import create_deepseek_embedding, create_xiaomi_embe
 
 EmbeddingFactory.register("deepseek", create_deepseek_embedding)
 EmbeddingFactory.register("xiaomi", create_xiaomi_embedding)
+
+from app.core.embedding.ollama import create_ollama_embedding
+
+EmbeddingFactory.register("ollama", create_ollama_embedding)
 
 try:
     from app.core.embedding.local import create_local_embedding

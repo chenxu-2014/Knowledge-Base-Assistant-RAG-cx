@@ -1,12 +1,18 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
+# 以 config.py 自身位置推算项目根目录，无论从哪里运行都能找到 .env
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_ENV_PATH = _PROJECT_ROOT / ".env"
+
 
 class Settings(BaseSettings):
-    """统一配置管理，通过环境变量或 .env 文件注入"""
+    """统一配置管理，所有配置从 .env 注入，硬编码默认值已移除"""
 
     # LLM 配置
-    llm_provider: str = Field(default="deepseek", description="大模型供应商: deepseek | xiaomi | local")
+    llm_provider: str = "deepseek"
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
@@ -19,11 +25,16 @@ class Settings(BaseSettings):
     local_model_path: str = ""
     local_model_name: str = ""
 
+    # Ollama 配置
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen3.5:9b"
+
     # Embedding 配置
-    embedding_provider: str = Field(default="deepseek", description="Embedding 供应商: deepseek | xiaomi | local")
+    embedding_provider: str = "deepseek"
     embedding_deepseek_model: str = "deepseek-embedding"
     embedding_xiaomi_model: str = "text-embedding-001"
     embedding_local_model: str = "BAAI/bge-small-zh-v1.5"
+    embedding_ollama_model: str = "nomic-embed-text:v1.5"
 
     # Chroma 配置
     chroma_persist_dir: str = "data/chroma_db"
@@ -36,7 +47,7 @@ class Settings(BaseSettings):
     # 检索配置
     search_top_k: int = 4
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": str(_ENV_PATH), "env_file_encoding": "utf-8"}
 
 
 settings = Settings()

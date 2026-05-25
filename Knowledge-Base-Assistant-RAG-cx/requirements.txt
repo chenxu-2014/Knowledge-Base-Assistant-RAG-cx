@@ -8,6 +8,7 @@ langchain-chroma>=0.1
 langchain-community>=0.2
 chromadb>=0.5
 
+langchain-ollama>=0.1
 python-dotenv>=1.0
 python-multipart>=0.0.9
 

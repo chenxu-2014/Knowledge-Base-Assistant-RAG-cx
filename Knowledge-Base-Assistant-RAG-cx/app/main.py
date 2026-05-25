@@ -29,17 +29,25 @@ def _init_components():
 
     # 直接用 ChatOpenAI（DeepSeek / MiMo 均兼容 OpenAI 协议）
     provider = settings.llm_provider
-    api_key = getattr(settings, f"{provider}_api_key", "")
-    base_url = getattr(settings, f"{provider}_base_url", "")
-    model = getattr(settings, f"{provider}_model", "")
-
-    llm = ChatOpenAI(
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        temperature=0.1,
-        max_tokens=2048,
-    )
+    if provider == "ollama":
+        from langchain_ollama import ChatOllama
+        llm = ChatOllama(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_model,
+            temperature=0.1,
+            num_predict=2048,
+        )
+    else:
+        api_key = getattr(settings, f"{provider}_api_key", "")
+        base_url = getattr(settings, f"{provider}_base_url", "")
+        model = getattr(settings, f"{provider}_model", "")
+        llm = ChatOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            temperature=0.1,
+            max_tokens=2048,
+        )
 
     chain = RAGChainFactory.create(
         llm=llm,

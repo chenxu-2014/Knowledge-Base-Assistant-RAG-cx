@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 UPLOAD_DIR = Path("data/documents")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-SUPPORTED_EXT = {".pdf", ".docx", ".doc", ".md", ".txt"}
+SUPPORTED_EXT = {".pdf", ".docx", ".md", ".txt"}
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)

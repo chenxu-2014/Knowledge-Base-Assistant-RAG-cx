@@ -127,6 +127,7 @@ class DocumentLoaderFactory:
         ".docx": DocxLoader,
         ".md": MarkdownLoader,
         ".markdown": MarkdownLoader,
+        ".txt": MarkdownLoader,
     }
 
     @classmethod

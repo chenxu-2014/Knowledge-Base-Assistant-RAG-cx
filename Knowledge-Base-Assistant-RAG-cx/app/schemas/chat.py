@@ -12,6 +12,8 @@ class SourceDocument(BaseModel):
     score: float | None = None
     metadata: dict = Field(default_factory=dict)
 
+class ChatResponseChenxu(BaseModel):
+    answer: str
 
 class ChatResponse(BaseModel):
     answer: str
