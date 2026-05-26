@@ -243,9 +243,14 @@ async function sendQuestion() {
   questionInput.style.height = 'auto';
 
   const aiMsg = addMsg('assistant', '<span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid #e2e8f0;border-top-color:#4f46e5;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;"></span>');
+  const bubble = aiMsg.querySelector('.bubble');
+
+  let answerText = '';
+  let thinkingText = '';
+  let sources = [];
 
   try {
-    const res = await fetch(`${API}/api/chat`, {
+    const res = await fetch(`${API}/api/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: q }),
@@ -254,11 +259,58 @@ async function sendQuestion() {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || res.statusText);
     }
-    const data = await res.json();
-    const answerHtml = data.answer.replace(/</g, '&lt;').replace(/\n/g, '<br>');
-    aiMsg.querySelector('.bubble').innerHTML = answerHtml + renderSources(data.sources);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // 保留不完整的最后一行
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6);
+        if (!jsonStr) continue;
+
+        let evt;
+        try { evt = JSON.parse(jsonStr); } catch { continue; }
+
+        if (evt.event === 'sources') {
+          sources = evt.data;
+          document.getElementById('statusText').textContent = '回答中...';
+        } else if (evt.event === 'thinking') {
+          thinkingText += evt.data;
+          const thinkHtml = thinkingText.replace(/</g, '&lt;').replace(/\n/g, '<br>');
+          const thinkingEl = bubble.querySelector('.thinking-section');
+          if (thinkingEl) {
+            thinkingEl.querySelector('.thinking-content').innerHTML = thinkHtml;
+          } else {
+            bubble.innerHTML = `<details class="thinking-section" open><summary style="cursor:pointer;color:#f59e0b;font-size:13px;">&#128161; 思考过程</summary><div class="thinking-content" style="font-size:13px;color:#64748b;padding:6px 0;border-left:2px solid #f59e0b;padding-left:10px;margin:6px 0;">${thinkHtml}</div></details><span class="answer-text"></span>`;
+          }
+        } else if (evt.event === 'content') {
+          answerText += evt.data;
+          const answerHtml = answerText.replace(/</g, '&lt;').replace(/\n/g, '<br>');
+          let answerEl = bubble.querySelector('.answer-text');
+          if (!answerEl) {
+            bubble.innerHTML = (thinkingText ? '' : '') + `<span class="answer-text">${answerHtml}</span>`;
+            answerEl = bubble.querySelector('.answer-text');
+          }
+          answerEl.innerHTML = answerHtml;
+        } else if (evt.event === 'done') {
+          // 追加参考来源
+          if (sources.length) {
+            bubble.innerHTML += renderSources(sources);
+          }
+        }
+      }
+    }
   } catch (e) {
-    aiMsg.querySelector('.bubble').innerHTML = `<span style="color:var(--danger)">请求失败: ${e.message}</span>`;
+    bubble.innerHTML = `<span style="color:var(--danger)">请求失败: ${e.message}</span>`;
   }
 
   isSending = false;

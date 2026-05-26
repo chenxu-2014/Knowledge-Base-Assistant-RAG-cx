@@ -164,7 +164,7 @@ class MarkdownLoader(BaseDocumentLoader):
     .md、.markdown、.txt 均复用此 Loader。
     """
 
-    SUPPORTED_EXTENSIONS = {".md", ".markdown"}
+    SUPPORTED_EXTENSIONS = {".txt",".md", ".markdown"}
 
     def load(self, file_path: str | Path) -> list[Document]:
         """加载 Markdown/TXT 文件，整篇一个 Document。"""
