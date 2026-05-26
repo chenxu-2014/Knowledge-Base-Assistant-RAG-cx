@@ -80,6 +80,7 @@ def _init_components():
             model=model,
             temperature=0.1,   # 低温度，回答更确定性
             max_tokens=2048,   # 最大生成 token 数
+            timeout=60,        # 请求超时时间（秒）
         )
 
     # 第五步：创建 RAG 链（串联检索 + LLM）
@@ -87,6 +88,7 @@ def _init_components():
         llm=llm,
         vectorstore=vectorstore,
         top_k=settings.search_top_k,
+        score_threshold=settings.search_score_threshold,
     )
 
     # 返回所有组件，挂载到 app.state.rag

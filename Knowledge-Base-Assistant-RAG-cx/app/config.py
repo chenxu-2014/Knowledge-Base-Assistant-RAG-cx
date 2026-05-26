@@ -74,6 +74,7 @@ class Settings(BaseSettings):
 
     # ─── 检索配置 ───
     search_top_k: int = 4  # 检索返回的最相关结果数量
+    search_score_threshold: float = 0.6  # 余弦相似度阈值，低于此分数视为无关，回退到大模型直接回答
 
     model_config = {"env_file": str(_ENV_PATH), "env_file_encoding": "utf-8"}
 

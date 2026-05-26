@@ -43,3 +43,9 @@ CONTEXT_ITEM = "[{index}] 来源：{source}\n{content}"
 
 # 检索无结果时的兜底回答
 NO_RESULT_MESSAGE = "根据现有知识库，暂时无法回答该问题。"
+
+# 知识库无结果时，直接询问大模型的系统提示词
+DIRECT_SYSTEM_PROMPT = """你是一个智能问答助手。用户询问了一个问题，但知识库中没有找到相关内容。请直接利用你的知识来回答用户的问题。"""
+
+# 直接询问大模型的用户消息模板
+DIRECT_USER_TEMPLATE = "{question}"

@@ -29,6 +29,8 @@ from pydantic import BaseModel, Field
 from app.core.chain.prompts import (
     CONTEXT_ITEM,
     DEFAULT_SYSTEM_PROMPT,
+    DIRECT_SYSTEM_PROMPT,
+    DIRECT_USER_TEMPLATE,
     NO_RESULT_MESSAGE,
     USER_TEMPLATE,
 )
@@ -130,9 +132,14 @@ class RAGChain:
         results = self._retrieve(question)
 
         if not results:
-            # 检索无结果时返回兜底回答
-            logger.info("检索无结果，返回兜底回答: %s", question[:30])
-            return RAGResult(answer=NO_RESULT_MESSAGE, sources=[])
+            # 检索无结果时，直接调用大模型回答
+            logger.info("检索无结果，直接调用大模型: %s", question[:30])
+            messages = self._build_direct_messages(question, chat_history)
+            response = self._llm.invoke(messages)
+            return RAGResult(
+                answer="当前知识库中未找到相关信息，以下为大模型回答：\n\n" + response.content,
+                sources=[],
+            )
 
         # 第二步：将检索结果格式化为上下文文本
         context = self._build_context(results)
@@ -165,7 +172,13 @@ class RAGChain:
         results = self._retrieve(question)
 
         if not results:
-            yield NO_RESULT_MESSAGE
+            # 检索无结果时，直接流式调用大模型
+            logger.info("检索无结果，直接流式调用大模型: %s", question[:30])
+            yield "当前知识库中未找到相关信息，以下为大模型回答：\n\n"
+            messages = self._build_direct_messages(question, chat_history)
+            for chunk in self._llm.stream(messages):
+                if chunk.content:
+                    yield chunk.content
             return
 
         context = self._build_context(results)
@@ -195,7 +208,22 @@ class RAGChain:
         results = self._retrieve(question)
 
         if not results:
-            yield json.dumps({"event": "content", "data": NO_RESULT_MESSAGE}, ensure_ascii=False)
+            # 检索无结果时，直接流式调用大模型
+            logger.info("检索无结果，直接流式事件调用大模型: %s", question[:30])
+            yield json.dumps(
+                {"event": "content", "data": "当前知识库中未找到相关信息，以下为大模型回答：\n\n"},
+                ensure_ascii=False,
+            )
+            messages = self._build_direct_messages(question, chat_history)
+            for chunk in self._llm.stream(messages):
+                reasoning = (
+                    chunk.additional_kwargs.get("reasoning_content")
+                    or chunk.additional_kwargs.get("thinking")
+                )
+                if reasoning:
+                    yield json.dumps({"event": "thinking", "data": reasoning}, ensure_ascii=False)
+                if chunk.content:
+                    yield json.dumps({"event": "content", "data": chunk.content}, ensure_ascii=False)
             yield json.dumps({"event": "done", "data": ""}, ensure_ascii=False)
             return
 
@@ -275,10 +303,11 @@ class RAGChain:
             results = candidates[: self._top_k]
 
         logger.info(
-            "检索完成: query=%s, candidates=%d, final=%d",
+            "检索完成: query=%s, candidates=%d, final=%d, scores=%s",
             question[:30],
             len(candidates),
             len(results),
+            [round(r.score, 4) for r in results] if results else [],
         )
         return results
 
@@ -343,6 +372,34 @@ class RAGChain:
         user_content = USER_TEMPLATE.format(context=context, question=question)
         messages.append(HumanMessage(content=user_content))
 
+        return messages
+
+    def _build_direct_messages(
+        self,
+        question: str,
+        chat_history: list[dict] | None,
+    ) -> list:
+        """知识库无结果时，组装直接询问大模型的消息列表（不带 RAG 上下文）。
+
+        Args:
+            question: 用户问题。
+            chat_history: 可选的对话历史。
+
+        Returns:
+            list: LangChain 消息列表。
+        """
+        messages = [SystemMessage(content=DIRECT_SYSTEM_PROMPT)]
+
+        if chat_history:
+            for turn in chat_history:
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                else:
+                    messages.append(SystemMessage(content=content))
+
+        messages.append(HumanMessage(content=DIRECT_USER_TEMPLATE.format(question=question)))
         return messages
 
     @staticmethod
