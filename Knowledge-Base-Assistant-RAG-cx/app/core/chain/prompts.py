@@ -1,5 +1,22 @@
-"""RAG Prompt 模板 —— 抗幻觉设计"""
+"""
+RAG Prompt 模板 —— 抗幻觉设计。
 
+提示词工程要点：
+    1. 强制基于参考内容回答，禁止编造（抗幻觉）
+    2. 无相关答案时明确说明"无法回答"，避免强行拼凑
+    3. 要求标注引用来源编号，便于用户追溯
+    4. 要求简洁准确，不要复述问题
+
+变量说明：
+    {context}  — 由 RAGChain._build_context() 拼接的检索结果文本
+    {question} — 用户原始问题
+
+调用关系：
+    RAGChain._build_messages()
+      └─> USER_TEMPLATE.format(context=context, question=question)
+"""
+
+# 系统提示词 —— 定义 LLM 的角色和回答规则
 DEFAULT_SYSTEM_PROMPT = '''你是一个严谨的企业知识库问答助手。请严格依据下方【参考内容】回答用户问题。
 
 ## 回答规则
@@ -11,6 +28,7 @@ DEFAULT_SYSTEM_PROMPT = '''你是一个严谨的企业知识库问答助手。�
 5. **简洁准确**：直接回答问题，不要复述问题本身，不要添加无关信息
 6. **忠于原文**：引用时尽量使用原文表述，不要做过度解读或推断'''
 
+# 用户消息模板 —— 包含检索到的上下文和用户问题
 USER_TEMPLATE = (
     "【参考内容】\n"
     "{context}\n\n"
@@ -19,6 +37,9 @@ USER_TEMPLATE = (
     "请根据参考内容回答。如果参考内容中没有相关信息，请直接说明无法回答。"
 )
 
+# 上下文条目模板 —— 单个检索结果的格式化模板
+# index: 编号, source: 来源文件名, content: 文本内容
 CONTEXT_ITEM = "[{index}] 来源：{source}\n{content}"
 
+# 检索无结果时的兜底回答
 NO_RESULT_MESSAGE = "根据现有知识库，暂时无法回答该问题。"
