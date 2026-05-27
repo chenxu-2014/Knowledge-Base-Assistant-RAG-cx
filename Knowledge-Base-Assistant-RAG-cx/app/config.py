@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "data/chroma_db"  # 向量库持久化目录
     chroma_collection_name: str = "knowledge_base"  # 集合名称（类似数据库表名）
 
+    # ─── Milvus 配置 ───
+    vectorstore_provider: str = "chroma"  # 向量库选择: chroma | milvus
+    milvus_uri: str = "http://localhost:19530"  # Milvus 服务地址
+    milvus_token: str = "root:Milvus"  # 认证 token
+    milvus_collection_name: str = "knowledge_base"  # Milvus 集合名
+    milvus_dense_weight: float = 0.6  # 混合检索 dense 权重
+    milvus_sparse_weight: float = 0.4  # 混合检索 sparse（BM25）权重
+
     # ─── 文档分块配置 ───
     chunk_size: int = 512    # 每个 chunk 的最大字符数
     chunk_overlap: int = 50  # 相邻 chunk 的重叠字符数
