@@ -47,6 +47,7 @@ class RAGChainFactory:
         score_threshold: float | None = None,
         reranker: BaseReranker | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        query_rewrite: bool = True,
     ) -> RAGChain:
         """创建 RAGChain 实例。
 
@@ -58,15 +59,17 @@ class RAGChainFactory:
             score_threshold: 相似度阈值，低于此分数的结果被过滤。
             reranker: 可选的重排序器，对粗召回结果精排。
             system_prompt: 系统提示词。
+            query_rewrite: 是否启用查询改写。
 
         Returns:
             RAGChain: RAG 推理链实例。
         """
         logger.info(
-            "创建 RAGChain: top_k=%d, retrieve_k=%s, reranker=%s",
+            "创建 RAGChain: top_k=%d, retrieve_k=%s, reranker=%s, query_rewrite=%s",
             top_k,
             retrieve_k,
             type(reranker).__name__ if reranker else "None",
+            query_rewrite,
         )
         return RAGChain(
             llm=llm,
@@ -76,6 +79,7 @@ class RAGChainFactory:
             score_threshold=score_threshold,
             reranker=reranker,
             system_prompt=system_prompt,
+            query_rewrite=query_rewrite,
         )
 
 

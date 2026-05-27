@@ -32,6 +32,8 @@ from app.core.chain.prompts import (
     DIRECT_SYSTEM_PROMPT,
     DIRECT_USER_TEMPLATE,
     NO_RESULT_MESSAGE,
+    QUERY_REWRITE_PROMPT,
+    QUERY_REWRITE_TEMPLATE,
     USER_TEMPLATE,
 )
 from app.core.reranker.base import BaseReranker
@@ -102,6 +104,7 @@ class RAGChain:
         score_threshold: float | None = None,
         reranker: BaseReranker | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        query_rewrite: bool = True,
     ):
         self._llm = llm
         self._vectorstore = vectorstore
@@ -111,6 +114,7 @@ class RAGChain:
         self._score_threshold = score_threshold
         self._reranker = reranker
         self._system_prompt = system_prompt
+        self._query_rewrite = query_rewrite
 
     # ================================================================
     # 对外接口
@@ -128,8 +132,8 @@ class RAGChain:
         Returns:
             RAGResult: 包含 answer（回答文本）和 sources（引用来源列表）。
         """
-        # 第一步：向量检索
-        results = self._retrieve(question)
+        # 第一步：向量检索（自动改写查询）
+        results = self._retrieve(question, chat_history)
 
         if not results:
             # 检索无结果时，直接调用大模型回答
@@ -169,7 +173,7 @@ class RAGChain:
         Yields:
             str: 回答的逐个 token 片段。
         """
-        results = self._retrieve(question)
+        results = self._retrieve(question, chat_history)
 
         if not results:
             # 检索无结果时，直接流式调用大模型
@@ -205,7 +209,7 @@ class RAGChain:
         Yields:
             str: JSON 格式的事件字符串。
         """
-        results = self._retrieve(question)
+        results = self._retrieve(question, chat_history)
 
         if not results:
             # 检索无结果时，直接流式调用大模型
@@ -263,30 +267,40 @@ class RAGChain:
         Returns:
             list[SourceDocument]: 检索到的引用来源列表。
         """
-        results = self._retrieve(question)
+        results = self._retrieve(question, chat_history=None)
         return self._format_sources(results)
 
     # ================================================================
     # 内部方法
     # ================================================================
 
-    def _retrieve(self, question: str) -> list[SearchResult]:
+    def _retrieve(
+        self, question: str, chat_history: list[dict] | None = None
+    ) -> list[SearchResult]:
         """向量检索流程。
 
         步骤：
+            0. (可选) 查询改写 —— 用 LLM 将问题优化为更适合检索的查询
             1. 多召回候选 —— 调用 vectorstore.similarity_search() 获取 retrieve_k 个候选
             2. 阈值过滤  —— 按 score_threshold 过滤低质量结果
             3. 重排序     —— (可选) 用 reranker 精排，或直接截断 top_k
 
         Args:
             question: 用户问题。
+            chat_history: 可选的对话历史（用于查询改写）。
 
         Returns:
             list[SearchResult]: 最终的检索结果列表（最多 top_k 个）。
         """
+        # 0. 查询改写：有对话历史时，用 LLM 将指代词还原为具体名词
+        search_query = question
+        if self._query_rewrite and chat_history:
+            search_query = self._rewrite_query(question, chat_history)
+            logger.info("查询改写: %s → %s", question[:30], search_query[:50])
+
         # 1. 粗召回：获取 retrieve_k 个候选（默认 top_k * 3）
         candidates = self._vectorstore.similarity_search(
-            question, top_k=self._retrieve_k
+            search_query, top_k=self._retrieve_k
         )
 
         # 2. 阈值过滤：丢弃相似度低于阈值的候选
@@ -298,18 +312,56 @@ class RAGChain:
 
         # 3. 精排：有 reranker 时用 reranker 精排，否则直接截取 top_k
         if self._reranker and candidates:
-            results = self._reranker.rerank(question, candidates, top_k=self._top_k)
+            results = self._reranker.rerank(search_query, candidates, top_k=self._top_k)
         else:
             results = candidates[: self._top_k]
 
         logger.info(
             "检索完成: query=%s, candidates=%d, final=%d, scores=%s",
-            question[:30],
+            search_query[:30],
             len(candidates),
             len(results),
             [round(r.score, 4) for r in results] if results else [],
         )
         return results
+
+    def _rewrite_query(self, question: str, chat_history: list[dict]) -> str:
+        """用 LLM 改写查询，补全省略信息，使其更适合向量检索。
+
+        Args:
+            question: 用户原始问题。
+            chat_history: 对话历史。
+
+        Returns:
+            str: 改写后的查询文本。
+        """
+        # 只取最近 3 轮对话作为改写上下文
+        recent = chat_history[-6:] if len(chat_history) > 6 else chat_history
+        history_lines = []
+        for turn in recent:
+            role = "用户" if turn.get("role") == "user" else "助手"
+            history_lines.append(f"{role}: {turn.get('content', '')}")
+        history_text = "\n".join(history_lines) if history_lines else "（无对话历史）"
+
+        messages = [
+            SystemMessage(content=QUERY_REWRITE_PROMPT),
+            HumanMessage(
+                content=QUERY_REWRITE_TEMPLATE.format(
+                    history=history_text, question=question
+                )
+            ),
+        ]
+
+        try:
+            response = self._llm.invoke(messages)
+            rewritten = response.content.strip()
+            # 如果改写结果为空或太短，回退到原问题
+            if not rewritten or len(rewritten) < 2:
+                return question
+            return rewritten
+        except Exception as e:
+            logger.warning("查询改写失败，使用原问题: %s", e)
+            return question
 
     @staticmethod
     def _build_context(results: list[SearchResult]) -> str:

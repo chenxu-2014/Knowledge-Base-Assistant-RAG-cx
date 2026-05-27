@@ -97,6 +97,7 @@ def _init_components():
         top_k=settings.search_top_k,
         score_threshold=settings.search_score_threshold,
         reranker=reranker,
+        query_rewrite=settings.query_rewrite,
     )
 
     # 返回所有组件，挂载到 app.state.rag

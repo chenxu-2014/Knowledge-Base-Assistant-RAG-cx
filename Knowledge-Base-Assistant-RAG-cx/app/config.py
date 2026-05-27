@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     reranker_backend: str = "none"  # 重排序器: none | cross_encoder
     reranker_model: str = "BAAI/bge-reranker-v2-m3"  # CrossEncoder 模型名
 
+    # ─── 查询改写配置 ───
+    query_rewrite: bool = True  # 是否启用查询改写（有对话历史时自动补全省略信息）
+
     model_config = {"env_file": str(_ENV_PATH), "env_file_encoding": "utf-8"}
 
 
