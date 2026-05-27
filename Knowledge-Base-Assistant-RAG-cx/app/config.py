@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # DeepSeek 配置
     deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
 
     # 小米 MiMo 配置

@@ -49,9 +49,15 @@ class DocumentPipeline:
             loader_factory: 加载器工厂，默认 DocumentLoaderFactory。
         """
         self._loader_factory = loader_factory
-        # 根据策略创建对应的分块器，例如 RecursiveSplitter(chunk_size=500, chunk_overlap=100)
+        # 默认分块器（用于非 MD 文件）
         self._splitter: BaseDocumentSplitter = DocumentSplitterFactory.create(
             strategy=splitter_strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+        # MD 文件使用 smart 策略（支持标题、段落等语义分块）
+        self._smart_splitter: BaseDocumentSplitter = DocumentSplitterFactory.create(
+            strategy="smart",
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
         )
@@ -89,8 +95,9 @@ class DocumentPipeline:
             logger.error("文件加载异常: %s, 错误: %s", path.name, e)
             raise
 
-        # 第二步：文本分块
-        chunks = self._splitter.split(documents)
+        # 第二步：文本分块（MD 文件用 smart 策略，其他用默认策略）
+        splitter = self._smart_splitter if path.suffix.lower() == ".md" else self._splitter
+        chunks = splitter.split(documents)
         # 为每个 chunk 打上索引，写入 metadata，便于后续调试和版本管理
         for i, chunk in enumerate(chunks):
             chunk.metadata["_chunk_index"] = i

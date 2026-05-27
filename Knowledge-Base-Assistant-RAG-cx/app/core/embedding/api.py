@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def create_deepseek_embedding(
     api_key: str,
-    base_url: str = "https://api.deepseek.com",
+    base_url: str = "https://api.deepseek.com/v1",
     model: str = "deepseek-embedding",
 ) -> OpenAIEmbeddings:
     """创建 DeepSeek Embedding 实例。

@@ -91,6 +91,7 @@
 <header>
   <h1>知识库助手</h1>
   <span class="status" id="statusText">就绪</span>
+  <button id="clearBtn" onclick="clearChat()" style="margin-left:12px;background:none;border:1px solid var(--border);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:12px;color:var(--text-secondary);">清空对话</button>
 </header>
 
 <div class="layout">
@@ -128,6 +129,8 @@
 <script>
 const API = '';
 let isSending = false;
+let chatHistory = [];       // 对话历史: [{role, content}]
+const MAX_HISTORY = 10;     // 最多保留最近 N 轮对话
 
 // ---- Upload ----
 const uploadZone = document.getElementById('uploadZone');
@@ -253,7 +256,7 @@ async function sendQuestion() {
     const res = await fetch(`${API}/api/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q }),
+      body: JSON.stringify({ question: q, chat_history: chatHistory }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -313,9 +316,21 @@ async function sendQuestion() {
     bubble.innerHTML = `<span style="color:var(--danger)">请求失败: ${e.message}</span>`;
   }
 
+  // 维护对话历史
+  chatHistory.push({ role: 'user', content: q });
+  chatHistory.push({ role: 'assistant', content: answerText });
+  if (chatHistory.length > MAX_HISTORY * 2) {
+    chatHistory = chatHistory.slice(-MAX_HISTORY * 2);
+  }
+
   isSending = false;
   sendBtn.disabled = false;
   document.getElementById('statusText').textContent = '就绪';
+}
+
+function clearChat() {
+  chatHistory = [];
+  messagesEl.innerHTML = `<div class="welcome" id="welcome"><div class="inner"><div class="icon">&#128218;</div><p>上传文档后开始提问</p></div></div>`;
 }
 
 // Init
