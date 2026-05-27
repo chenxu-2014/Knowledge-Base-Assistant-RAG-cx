@@ -45,6 +45,7 @@ def _init_components():
     from app.core.vectorstore import VectorStoreFactory
     from app.core.document import DocumentPipeline
     from app.core.chain import RAGChainFactory
+    from app.core.reranker import RerankerFactory
 
     # 第一步：创建 Embedding 实例（根据 settings.embedding_provider 选择供应商）
     embedding = EmbeddingFactory.from_settings(settings)
@@ -83,12 +84,19 @@ def _init_components():
             timeout=60,        # 请求超时时间（秒）
         )
 
-    # 第五步：创建 RAG 链（串联检索 + LLM）
+    # 第五步：创建 Reranker（可选，对检索结果精排）
+    reranker = RerankerFactory.create(
+        backend=settings.reranker_backend,
+        model_name=settings.reranker_model,
+    )
+
+    # 第六步：创建 RAG 链（串联检索 + reranker + LLM）
     chain = RAGChainFactory.create(
         llm=llm,
         vectorstore=vectorstore,
         top_k=settings.search_top_k,
         score_threshold=settings.search_score_threshold,
+        reranker=reranker,
     )
 
     # 返回所有组件，挂载到 app.state.rag

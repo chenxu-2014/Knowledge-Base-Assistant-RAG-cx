@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     search_top_k: int = 4  # 检索返回的最相关结果数量
     search_score_threshold: float = 0.6  # 余弦相似度阈值，低于此分数视为无关，回退到大模型直接回答
 
+    # ─── Reranker 配置 ───
+    reranker_backend: str = "none"  # 重排序器: none | cross_encoder
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"  # CrossEncoder 模型名
+
     model_config = {"env_file": str(_ENV_PATH), "env_file_encoding": "utf-8"}
 
 
