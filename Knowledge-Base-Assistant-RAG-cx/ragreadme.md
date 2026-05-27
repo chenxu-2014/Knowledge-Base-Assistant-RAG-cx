@@ -26,22 +26,22 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        在线问答阶段 (Chat)                           │
 │                                                                     │
-│  用户问题      向量检索       拼接上下文      调用LLM      生成回答    │
-│  ┌────────┐  ┌───────────┐  ┌──────────┐  ┌─────────┐  ┌────────┐ │
-│  │ Chat   │─>│ VectorStore│─>│ RAGChain │─>│ ChatOpen│─>│ RAGRes-│ │
-│  │ Request│  │ Manager   │  │          │  │ AI/Chat │  │ ult    │ │
-│  │        │  │ .similarity│  │ _build_  │  │ Ollama  │  │        │ │
-│  └────────┘  │ _search() │  │ context()│  │         │  └────────┘ │
-│              └───────────┘  │ _build_  │  └─────────┘             │
-│                             │ messages()│                          │
-│                             └──────────┘                           │
-│                                    │                               │
-│                             ┌──────┴──────┐                       │
-│                             │ Prompts 模板 │                       │
-│                             │ (抗幻觉设计) │                       │
-│                             └─────────────┘                       │
+│  用户问题   查询改写     向量检索      阈值过滤     精排      LLM    │
+│  ┌────────┐┌─────────┐┌───────────┐┌─────────┐┌──────┐┌─────────┐ │
+│  │ Chat   ││_rewrite ││VectorStore││ 动态断层 ││Rerank││ ChatOpen│ │
+│  │ Request││ _query()││.similarity││ 检测    ││ er   ││ AI      │ │
+│  └────────┘└─────────┘│ _search() │└─────────┘└──────┘└─────────┘ │
+│     │         │       └───────────┘     │               │         │
+│     │    补全省略信息  Dense+Sparse    top_k保底        │         │
+│     │    (有历史时)   (Milvus混合)                      │         │
+│     │                                                  │         │
+│     └─────── 无结果 → 大模型直接回答 ───────────────────┘         │
 │                                                                     │
-│  可选增强: BaseReranker (CrossEncoderReranker)                      │
+│  ┌──────────┐┌──────────┐┌─────────────┐                          │
+│  │ 拼接上下文││ 组装消息  ││Prompts 模板  │                          │
+│  │ _build_  ││ _build_  ││(抗幻觉+改写) │                          │
+│  │ context()││messages()│└─────────────┘                          │
+│  └──────────┘└──────────┘                                         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -112,22 +112,23 @@ main._init_components()
 
 ### 1.4 存入向量数据库
 
-**目标**: 将嵌入后的文档块存入 Chroma 向量数据库，支持版本管理和回滚。
+**目标**: 将嵌入后的文档块存入向量数据库，支持版本管理和回滚。支持 Chroma 和 Milvus 两种后端。
 
 | 类名 | 文件 | 职责 |
 |------|------|------|
-| `VectorStoreFactory` | `app/core/vectorstore/__init__.py` | 从配置创建 `VectorStoreManager` |
-| `VectorStoreManager` | `app/core/vectorstore/manager.py` | Chroma 向量库核心管理器 |
+| `VectorStoreFactory` | `app/core/vectorstore/__init__.py` | 根据配置选择 Chroma 或 Milvus |
+| `VectorStoreManager` | `app/core/vectorstore/manager.py` | Chroma 向量库管理器 |
+| `MilvusVectorStoreManager` | `app/core/vectorstore/milvus_manager.py` | Milvus 向量库管理器（混合检索） |
 | `SearchResult` | `app/core/vectorstore/models.py` | 语义检索结果数据模型 |
 | `SourceInfo` | `app/core/vectorstore/models.py` | 来源文件信息 |
 | `VersionInfo` | `app/core/vectorstore/models.py` | 版本记录信息 |
 
-**`VectorStoreManager` 核心方法**:
+**核心方法**（Chroma / Milvus 接口一致）:
 
 | 方法 | 职责 |
 |------|------|
 | `add_documents()` | 写入文档块，生成确定性 ID |
-| `similarity_search()` | 语义检索，只返回当前版本 |
+| `similarity_search()` | 语义检索（Milvus 为 Dense+Sparse 混合检索） |
 | `upsert_documents()` | 增量更新（旧版本归档 + 新版本写入） |
 | `rollback()` | 回滚到指定版本 |
 | `delete_by_source()` | 删除某文件所有版本 |
@@ -168,10 +169,11 @@ POST /api/chat
   └─> chat_endpoint()                            # app/api/routes/chat.py
        └─> chain.invoke(question, chat_history)   # app/core/chain/rag_chain.py
             │
-            ├─ _retrieve(question)                # 向量检索
-            │    ├─ vectorstore.similarity_search()  # 召回候选
-            │    ├─ score_threshold 过滤             # 阈值过滤
-            │    └─ reranker.rerank() (可选)          # 重排序
+            ├─ _retrieve(question, chat_history)  # 向量检索
+            │    ├─ _rewrite_query() (可选)         # 查询改写（有历史时）
+            │    ├─ vectorstore.similarity_search()  # 召回候选（Dense+Sparse）
+            │    ├─ _filter_by_score_gap()           # 动态阈值（断层检测+top_k保底）
+            │    └─ reranker.rerank() (可选)          # CrossEncoder 精排
             │
             ├─ _build_context(results)            # 拼接上下文
             │    └─ CONTEXT_ITEM 模板格式化
@@ -218,13 +220,18 @@ POST /api/chat
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `llm_provider` | `deepseek` | LLM 供应商选择 |
-| `embedding_provider` | `deepseek` | Embedding 供应商选择 |
-| `chunk_size` | `512` | 分块大小 |
-| `chunk_overlap` | `50` | 分块重叠 |
+| `llm_provider` | `deepseek` | LLM 供应商：deepseek / xiaomi / ollama |
+| `embedding_provider` | `local` | Embedding 供应商：local / deepseek / xiaomi / ollama |
+| `vectorstore_provider` | `chroma` | 向量库：chroma / milvus |
+| `chunk_size` | `512` | 分块大小（字符数） |
+| `chunk_overlap` | `50` | 分块重叠（字符数） |
 | `search_top_k` | `4` | 检索返回数量 |
+| `reranker_backend` | `cross_encoder` | 重排序器：none / cross_encoder |
+| `query_rewrite` | `true` | 是否启用查询改写 |
+| `dynamic_threshold` | `true` | 是否启用动态阈值 |
+| `min_score_gap` | `0.05` | 动态阈值最小断层距离 |
 | `chroma_persist_dir` | `data/chroma_db` | Chroma 持久化目录 |
-| `chroma_collection_name` | `knowledge_base` | Chroma 集合名 |
+| `milvus_uri` | `http://localhost:19530` | Milvus 服务地址 |
 
 ---
 
@@ -234,10 +241,11 @@ POST /api/chat
 main.py
   └─> _init_components()                    # 初始化所有 RAG 组件
        ├─ EmbeddingFactory.from_settings()  # 创建 Embedding
-       ├─ VectorStoreFactory.from_settings()# 创建向量库管理器
+       ├─ VectorStoreFactory.from_settings()# 创建向量库（Chroma/Milvus）
        ├─ DocumentPipeline()                # 创建文档处理管线
        ├─ ChatOpenAI / ChatOllama()         # 创建 LLM 实例
-       └─ RAGChainFactory.create()          # 创建 RAG 链
+       ├─ RerankerFactory.create()          # 创建 Reranker（可选）
+       └─ RAGChainFactory.create()          # 创建 RAG 链（含改写+动态阈值）
   └─> lifespan() → app.state.rag = {...}    # 挂载到 FastAPI app.state
   └─> app.include_router(chat.router)       # 注册聊天路由
   └─> app.include_router(document.router)   # 注册文档管理路由
