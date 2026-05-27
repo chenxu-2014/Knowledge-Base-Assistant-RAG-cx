@@ -9,19 +9,19 @@
 │  文档加载          文本拆分          文本嵌入          存入向量数据库   │
 │  ┌──────────┐    ┌──────────────┐  ┌──────────────┐  ┌───────────┐  │
 │  │ Document │───>│ BaseDocument │─>│ Embedding    │─>│ VectorStore│  │
-│  │ Loader   │    │ Splitter     │  │ Factory      │  │ Manager   │  │
+│  │ Loader   │    │ Splitter     │  │ Factory      │  │ Factory   │  │
 │  │ Factory  │    │ Factory      │  │              │  │           │  │
-│  └──────────┘    └──────────────┘  └──────────────┘  └───────────┘  │
+│  └──────────┘    └──────────────┘  └──────────────┘  └─────┬─────┘  │
 │       │                │                                    │       │
 │       v                v                                    v       │
-│  PdfLoader       RecursiveSplitter    create_deepseek_     Chroma   │
-│  DocxLoader      SmartSplitter        embedding()          (本地    │
-│  MarkdownLoader  FixedLengthSplitter  create_xiaomi_       持久化)  │
-│  (loader.py)     (splitter/)          embedding()                  │
-│                                     (embedding/)                   │
-│                                                                     │
-│  统一入口: DocumentPipeline.process(file_path)                       │
+│  PdfLoader       RecursiveSplitter    bge-small-zh     ┌────┴────┐  │
+│  DocxLoader      SmartSplitter( .md)  (本地512维)      │ Chroma  │  │
+│  MarkdownLoader  FixedLengthSplitter  text-embedding   │   or    │  │
+│  (loader.py)     (splitter/)          (API供应商)      │ Milvus  │  │
+│                                                        │ (混合检索)│  │
+│  统一入口: DocumentPipeline.process(file_path)          └─────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
+```
 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        在线问答阶段 (Chat)                           │
