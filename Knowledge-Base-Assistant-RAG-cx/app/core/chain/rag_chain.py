@@ -105,16 +105,19 @@ class RAGChain:
         reranker: BaseReranker | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         query_rewrite: bool = True,
+        dynamic_threshold: bool = True,
+        min_gap: float = 0.05,
     ):
         self._llm = llm
         self._vectorstore = vectorstore
         self._top_k = top_k
-        # retrieve_k 默认为 top_k 的 3 倍，给 reranker 足够的候选空间
         self._retrieve_k = retrieve_k or top_k * 3
         self._score_threshold = score_threshold
         self._reranker = reranker
         self._system_prompt = system_prompt
         self._query_rewrite = query_rewrite
+        self._dynamic_threshold = dynamic_threshold
+        self._min_gap = min_gap
 
     # ================================================================
     # 对外接口
@@ -282,7 +285,7 @@ class RAGChain:
         步骤：
             0. (可选) 查询改写 —— 用 LLM 将问题优化为更适合检索的查询
             1. 多召回候选 —— 调用 vectorstore.similarity_search() 获取 retrieve_k 个候选
-            2. 阈值过滤  —— 按 score_threshold 过滤低质量结果
+            2. 阈值过滤  —— 动态断层检测 或 静态阈值过滤，至少保留 top_k 个
             3. 重排序     —— (可选) 用 reranker 精排，或直接截断 top_k
 
         Args:
@@ -303,12 +306,15 @@ class RAGChain:
             search_query, top_k=self._retrieve_k
         )
 
-        # 2. 阈值过滤：丢弃相似度低于阈值的候选
-        if self._score_threshold is not None and candidates:
-            candidates = [
-                r for r in candidates
-                if r.score is not None and r.score >= self._score_threshold
-            ]
+        # 2. 阈值过滤
+        if candidates:
+            if self._dynamic_threshold:
+                candidates = self._filter_by_score_gap(candidates)
+            elif self._score_threshold is not None:
+                candidates = [
+                    r for r in candidates
+                    if r.score is not None and r.score >= self._score_threshold
+                ]
 
         # 3. 精排：有 reranker 时用 reranker 精排，否则直接截取 top_k
         if self._reranker and candidates:
@@ -324,6 +330,47 @@ class RAGChain:
             [round(r.score, 4) for r in results] if results else [],
         )
         return results
+
+    def _filter_by_score_gap(self, results: list[SearchResult]) -> list[SearchResult]:
+        """动态阈值：分数断层检测 + top_k 保底。
+
+        算法：
+            1. 按分数降序排列
+            2. 找相邻分数的最大断层位置
+            3. 如果断层 > min_gap 且断层前的结果数 >= top_k，在断层处截断
+            4. 否则保留 top_k 个
+
+        Args:
+            results: 已排序（或未排序）的检索结果。
+
+        Returns:
+            list[SearchResult]: 过滤后的结果，至少 top_k 个。
+        """
+        if len(results) <= self._top_k:
+            return results
+
+        sorted_results = sorted(results, key=lambda r: r.score or 0, reverse=True)
+        scores = [r.score or 0 for r in sorted_results]
+
+        # 找所有相邻位置的最大断层
+        max_gap = 0.0
+        gap_idx = 0
+        for i in range(len(scores) - 1):
+            gap = scores[i] - scores[i + 1]
+            if gap > max_gap:
+                max_gap = gap
+                gap_idx = i + 1
+
+        # 断层显著 且 截断后仍有 >= top_k 个结果 → 在断层处截断
+        if max_gap >= self._min_gap and gap_idx >= self._top_k - 1:
+            filtered = sorted_results[:gap_idx]
+            logger.info(
+                "动态阈值: 断层=%.4f at idx=%d, 截断 %d→%d",
+                max_gap, gap_idx, len(sorted_results), len(filtered),
+            )
+            return filtered
+
+        return sorted_results[: self._top_k]
 
     def _rewrite_query(self, question: str, chat_history: list[dict]) -> str:
         """用 LLM 改写查询，补全省略信息，使其更适合向量检索。

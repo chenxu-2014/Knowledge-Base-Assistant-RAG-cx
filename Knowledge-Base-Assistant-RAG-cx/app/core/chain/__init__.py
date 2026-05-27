@@ -48,6 +48,8 @@ class RAGChainFactory:
         reranker: BaseReranker | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         query_rewrite: bool = True,
+        dynamic_threshold: bool = True,
+        min_gap: float = 0.05,
     ) -> RAGChain:
         """创建 RAGChain 实例。
 
@@ -56,21 +58,16 @@ class RAGChainFactory:
             vectorstore: 向量库管理器。
             top_k: 最终返回的检索结果数量。
             retrieve_k: 初始召回数量（默认 top_k * 3，用于 reranker 精排前的粗召回）。
-            score_threshold: 相似度阈值，低于此分数的结果被过滤。
+            score_threshold: 静态相似度阈值（dynamic_threshold=False 时生效）。
             reranker: 可选的重排序器，对粗召回结果精排。
             system_prompt: 系统提示词。
             query_rewrite: 是否启用查询改写。
+            dynamic_threshold: 是否启用动态阈值（分数断层检测）。
+            min_gap: 动态阈值的最小断层距离。
 
         Returns:
             RAGChain: RAG 推理链实例。
         """
-        logger.info(
-            "创建 RAGChain: top_k=%d, retrieve_k=%s, reranker=%s, query_rewrite=%s",
-            top_k,
-            retrieve_k,
-            type(reranker).__name__ if reranker else "None",
-            query_rewrite,
-        )
         return RAGChain(
             llm=llm,
             vectorstore=vectorstore,
@@ -80,6 +77,8 @@ class RAGChainFactory:
             reranker=reranker,
             system_prompt=system_prompt,
             query_rewrite=query_rewrite,
+            dynamic_threshold=dynamic_threshold,
+            min_gap=min_gap,
         )
 
 

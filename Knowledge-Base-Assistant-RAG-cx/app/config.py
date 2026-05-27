@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     # ─── 查询改写配置 ───
     query_rewrite: bool = True  # 是否启用查询改写（有对话历史时自动补全省略信息）
 
+    # ─── 动态阈值配置 ───
+    dynamic_threshold: bool = True  # 是否启用动态阈值（分数断层检测 + top_k 保底）
+    min_score_gap: float = 0.05  # 动态阈值的最小断层距离
+
     model_config = {"env_file": str(_ENV_PATH), "env_file_encoding": "utf-8"}
 
 

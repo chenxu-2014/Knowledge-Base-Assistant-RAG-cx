@@ -98,6 +98,8 @@ def _init_components():
         score_threshold=settings.search_score_threshold,
         reranker=reranker,
         query_rewrite=settings.query_rewrite,
+        dynamic_threshold=settings.dynamic_threshold,
+        min_gap=settings.min_score_gap,
     )
 
     # 返回所有组件，挂载到 app.state.rag
