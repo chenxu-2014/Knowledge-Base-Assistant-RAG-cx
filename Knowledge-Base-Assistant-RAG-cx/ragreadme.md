@@ -78,16 +78,22 @@ DocumentPipeline.process(file_path)
 | `DocumentSplitterFactory` | `app/core/document/splitter/__init__.py` | 按策略名称创建对应分块器 |
 | `BaseDocumentSplitter` | `app/core/document/splitter/base.py` | 分块器抽象基类，参数校验 |
 | `RecursiveSplitter` | `app/core/document/splitter/recursive.py` | 递归分块，按分隔符层级切分，保留语义边界（默认策略） |
-| `SmartSplitter` | `app/core/document/splitter/smart.py` | 智能分块，优先级: 标题 → 段落 → 句子 → 字符 |
+| `SmartSplitter` | `app/core/document/splitter/smart.py` | 智能分块，优先级: 标题 → 段落 → 句子 → 字符（MD 文件专用） |
 | `FixedLengthSplitter` | `app/core/document/splitter/fixed.py` | 固定长度分块，按字符位置硬切 |
 | `TokenSplitter` | `app/core/document/splitter/token.py` | 按 Token 数分块（预留） |
+
+**分块策略选择**:
+- `.md` 文件 → `SmartSplitter`（按标题/段落语义分块）
+- 其他文件 → `RecursiveSplitter`（递归按分隔符切分）
 
 **调用链**:
 ```
 DocumentPipeline.process(file_path)
-  └─> self._splitter.split(documents)            # 返回 list[Document] (chunks)
-       └─> RecursiveSplitter.split()
-            └─> RecursiveCharacterTextSplitter.split_documents()
+  ├─ loader.load(path)                      # 加载为 list[Document]
+  └─ splitter.split(documents)              # 返回 list[Document] (chunks)
+       ├─ .md 文件 → SmartSplitter.split()
+       └─ 其他文件 → RecursiveSplitter.split()
+            └─ RecursiveCharacterTextSplitter.split_documents()
 ```
 
 ### 1.3 文本嵌入
@@ -97,17 +103,17 @@ DocumentPipeline.process(file_path)
 | 类名 / 函数 | 文件 | 职责 |
 |-------------|------|------|
 | `EmbeddingFactory` | `app/core/embedding/__init__.py` | 工厂类，按供应商创建 Embedding 实例 |
-| `create_deepseek_embedding()` | `app/core/embedding/api.py` | 创建 DeepSeek Embedding（OpenAI 兼容协议） |
-| `create_xiaomi_embedding()` | `app/core/embedding/api.py` | 创建小米 MiMo Embedding |
-| `create_local_embedding()` | `app/core/embedding/local.py` | 创建本地 HuggingFace Embedding（bge-small-zh） |
-| `create_ollama_embedding()` | `app/core/embedding/ollama.py` | 创建 Ollama 本地模型 Embedding |
+| `create_local_embedding()` | `app/core/embedding/local.py` | 本地 HuggingFace Embedding（BAAI/bge-small-zh-v1.5, 512维） |
+| `create_deepseek_embedding()` | `app/core/embedding/api.py` | DeepSeek Embedding（OpenAI 兼容协议） |
+| `create_xiaomi_embedding()` | `app/core/embedding/api.py` | 小米 MiMo Embedding |
+| `create_ollama_embedding()` | `app/core/embedding/ollama.py` | Ollama 本地模型 Embedding |
 
 **调用链**:
 ```
 main._init_components()
   └─> EmbeddingFactory.from_settings(settings)    # 根据 embedding_provider 配置选择
-       └─> create_deepseek_embedding() / create_xiaomi_embedding() / ...
-            └─> 返回 OpenAIEmbeddings / HuggingFaceEmbeddings / OllamaEmbeddings
+       └─> create_local_embedding() / create_deepseek_embedding() / ...
+            └─> 返回 HuggingFaceEmbeddings / OpenAIEmbeddings / OllamaEmbeddings
 ```
 
 ### 1.4 存入向量数据库
@@ -116,9 +122,9 @@ main._init_components()
 
 | 类名 | 文件 | 职责 |
 |------|------|------|
-| `VectorStoreFactory` | `app/core/vectorstore/__init__.py` | 根据配置选择 Chroma 或 Milvus |
+| `VectorStoreFactory` | `app/core/vectorstore/__init__.py` | 根据 `vectorstore_provider` 配置选择 Chroma 或 Milvus |
 | `VectorStoreManager` | `app/core/vectorstore/manager.py` | Chroma 向量库管理器 |
-| `MilvusVectorStoreManager` | `app/core/vectorstore/milvus_manager.py` | Milvus 向量库管理器（混合检索） |
+| `MilvusVectorStoreManager` | `app/core/vectorstore/milvus_manager.py` | Milvus 向量库管理器（Dense + BM25 混合检索） |
 | `SearchResult` | `app/core/vectorstore/models.py` | 语义检索结果数据模型 |
 | `SourceInfo` | `app/core/vectorstore/models.py` | 来源文件信息 |
 | `VersionInfo` | `app/core/vectorstore/models.py` | 版本记录信息 |
@@ -128,7 +134,7 @@ main._init_components()
 | 方法 | 职责 |
 |------|------|
 | `add_documents()` | 写入文档块，生成确定性 ID |
-| `similarity_search()` | 语义检索（Milvus 为 Dense+Sparse 混合检索） |
+| `similarity_search()` | 语义检索（Milvus 为 Dense + Sparse 混合检索） |
 | `upsert_documents()` | 增量更新（旧版本归档 + 新版本写入） |
 | `rollback()` | 回滚到指定版本 |
 | `delete_by_source()` | 删除某文件所有版本 |
@@ -137,12 +143,13 @@ main._init_components()
 **调用链**:
 ```
 document.py 中 upload_document()
-  └─> vectorstore.upsert_documents(filename, chunks)
-       └─> VectorStoreManager.upsert_documents()
-            ├─ _get_current_version(source)    # 查询当前版本号
-            ├─ 旧版本标记 _is_current=False    # 归档
-            └─ add_documents(new_chunks)       # 写入新版本
-                 └─ Chroma.add_documents()     # 底层 Chroma 写入
+  └─> pipeline.process(file_path)                # 加载+分块
+  └─> vectorstore.upsert_documents(source, chunks)
+       ├─ _get_current_version(source)           # 查询当前版本号
+       ├─ 旧版本标记 _is_current=False           # 归档
+       └─ add_documents(new_chunks)              # 写入新版本
+            ├─ Chroma: Chroma.add_documents()    # 纯向量检索
+            └─ Milvus: Milvus.add_texts()        # 自动生成 dense + BM25 sparse 向量
 ```
 
 ### 离线阶段统一入口
